@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+"""
+MIDI Humanizer CLI - Make MIDI files sound more human-like.
+
+This tool applies various humanization techniques to MIDI files to make them
+sound more natural and less mechanical. It supports multiple methods and
+intensity presets.
+"""
+
 import warnings
 
 # Suppress the pkg_resources deprecation warning from pretty_midi/muspy
@@ -5,160 +14,15 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 
 import argparse
 import muspy
-import random
 import os
 
-
-# Humanization methods and presets
-HUMANIZATION_METHODS = {
-    "basic": {
-        "name": "Basic Randomization",
-        "description": "Simple velocity and timing randomization",
-        "presets": {
-            "minimal": {
-                "velocity_range": 5,
-                "noteon_timing_range": 0.005,
-                "noteoff_timing_range": 0.002,
-                "min_duration_beats": 1 / 32,
-                "description": "Very subtle humanization - barely noticeable variations",
-            },
-            "medium": {
-                "velocity_range": 10,
-                "noteon_timing_range": 0.01,
-                "noteoff_timing_range": 0.005,
-                "min_duration_beats": 1 / 32,
-                "description": "Moderate humanization - natural musical variations",
-            },
-            "aggressive": {
-                "velocity_range": 20,
-                "noteon_timing_range": 0.02,
-                "noteoff_timing_range": 0.01,
-                "min_duration_beats": 1 / 32,
-                "description": "Strong humanization - pronounced expressive variations",
-            },
-        },
-    }
-}
-
-
-def get_preset_settings(method, preset_name):
-    """Get settings for a humanization method and preset"""
-    if method not in HUMANIZATION_METHODS:
-        raise ValueError(f"Unknown method: {method}")
-
-    if preset_name not in HUMANIZATION_METHODS[method]["presets"]:
-        available_presets = list(HUMANIZATION_METHODS[method]["presets"].keys())
-        raise ValueError(
-            f"Unknown preset '{preset_name}' for method '{method}'. Available: {available_presets}"
-        )
-
-    return HUMANIZATION_METHODS[method]["presets"][preset_name]
-
-
-def humanize_midi(music, method="basic", preset_name="medium"):
-    """
-    Apply humanization to a MIDI file using specified method and preset.
-
-    Args:
-        music: The muspy.Music object to humanize
-        method: The humanization method to use
-        preset_name: The preset intensity to apply
-
-    Returns:
-        The humanized muspy.Music object
-    """
-    settings = get_preset_settings(method, preset_name)
-
-    velocity_range = settings["velocity_range"]
-    noteon_timing_range = settings["noteon_timing_range"]
-    noteoff_timing_range = settings["noteoff_timing_range"]
-    min_duration_beats = settings["min_duration_beats"]
-
-    print(f"Applying {method} humanization with {preset_name} intensity:")
-    print(f"  Velocity range: ±{velocity_range}")
-    print(f"  Note-on timing range: ±{noteon_timing_range:.3f} beats")
-    print(f"  Note-off timing range: ±{noteoff_timing_range:.3f} beats")
-    print(f"  Minimum note duration: {min_duration_beats} beats")
-
-    # Get the resolution for timing calculations
-    resolution = music.resolution
-
-    # Convert beat-based timing ranges to tick-based
-    noteon_timing_ticks = int(noteon_timing_range * resolution)
-    noteoff_timing_ticks = int(noteoff_timing_range * resolution)
-    min_duration_ticks = int(min_duration_beats * resolution)
-
-    print(
-        f"  Timing in ticks (resolution={resolution}): note-on ±{noteon_timing_ticks}, note-off ±{noteoff_timing_ticks}"
-    )
-
-    for track in music.tracks:
-        print(f"\nProcessing track: {track.name}")
-        original_count = len(track.notes)
-
-        for note in track.notes:
-            original_start = note.start
-            original_end = note.end
-            original_velocity = note.velocity
-
-            # Randomize velocity (clamp to MIDI range)
-            velocity_offset = random.randint(-velocity_range, velocity_range)
-            note.velocity = max(1, min(127, note.velocity + velocity_offset))
-
-            # Randomize note-on timing
-            start_offset = random.randint(-noteon_timing_ticks, noteon_timing_ticks)
-            note.start = max(0, note.start + start_offset)
-
-            # Randomize note-off timing
-            end_offset = random.randint(-noteoff_timing_ticks, noteoff_timing_ticks)
-            note.end = note.end + end_offset
-
-            # Ensure minimum duration
-            if note.end - note.start < min_duration_ticks:
-                note.end = note.start + min_duration_ticks
-
-            # Debug output for significant changes
-            if (
-                abs(velocity_offset) > velocity_range // 2
-                or abs(start_offset) > noteon_timing_ticks // 2
-            ):
-                print(
-                    f"    Note {note.pitch}: velocity {original_velocity}→{note.velocity}, "
-                    f"timing {original_start}→{note.start}, duration {original_end-original_start}→{note.end-note.start}"
-                )
-
-        print(f"  Processed {original_count} notes")
-
-    # Resolve overlapping notes by shortening earlier notes
-    print("\nResolving note overlaps...")
-    overlap_count = 0
-
-    for track in music.tracks:
-        # Sort notes by pitch, then by start time
-        notes_by_pitch = {}
-        for note in track.notes:
-            if note.pitch not in notes_by_pitch:
-                notes_by_pitch[note.pitch] = []
-            notes_by_pitch[note.pitch].append(note)
-
-        for pitch, notes in notes_by_pitch.items():
-            notes.sort(key=lambda n: n.start)
-
-            for i in range(len(notes) - 1):
-                current_note = notes[i]
-                next_note = notes[i + 1]
-
-                # If current note overlaps with next note
-                if current_note.end > next_note.start:
-                    overlap_count += 1
-                    # Shorten current note to end just before next note starts
-                    current_note.end = max(
-                        current_note.start + min_duration_ticks, next_note.start - 1
-                    )
-
-    print(f"Resolved {overlap_count} overlapping notes")
-
-    return music
+# Import humanization modules
+from humanizer import (
+    HUMANIZATION_METHODS,
+    get_preset_settings,
+    humanize_midi_basic,
+    humanize_midi_advanced,
+)
 
 
 def main():
@@ -186,7 +50,8 @@ def main():
     )
 
     parser.add_argument(
-        "--preset", help="Humanization intensity preset (minimal, medium, aggressive)"
+        "--preset",
+        help="Humanization intensity preset (minimal, medium, aggressive) or style preset (classical, romantic, jazz)",
     )
 
     # Manual parameter overrides
@@ -199,6 +64,11 @@ def main():
         "--timing-range",
         type=float,
         help="Override timing randomization range in beats (±value)",
+    )
+    parser.add_argument(
+        "--roll-probability",
+        type=float,
+        help="Override chord roll probability (0.0-1.0, piano_performance method only)",
     )
 
     # Debugging
@@ -235,7 +105,13 @@ def main():
     if args.preset:
         preset = args.preset
     else:
-        preset = "medium"  # Default preset
+        # Set sensible defaults based on method
+        if method == "basic":
+            preset = "medium"
+        elif method == "piano_performance":
+            preset = "classical"
+        else:
+            preset = "medium"
         print(f"No preset specified, using default: {preset}")
 
     # Validate preset exists for the method
@@ -266,7 +142,11 @@ def main():
     print(f"\nHumanizing with method '{method}' and preset '{preset}'...")
 
     try:
-        humanized_music = humanize_midi(music, method, preset)
+        # Choose appropriate humanization function based on method
+        if method == "piano_performance":
+            humanized_music = humanize_midi_advanced(music, method, preset)
+        else:  # basic and any future simple methods
+            humanized_music = humanize_midi_basic(music, method, preset)
 
         print(f"\nSaving humanized MIDI file: {args.output_file}")
         muspy.write_midi(args.output_file, humanized_music)

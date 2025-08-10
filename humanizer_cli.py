@@ -1,3 +1,8 @@
+import warnings
+
+# Suppress the pkg_resources deprecation warning from pretty_midi/muspy
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
+
 import argparse
 import muspy
 import random
@@ -161,9 +166,16 @@ def main():
         description="Humanize MIDI files to make them sound more natural"
     )
 
-    # Required positional arguments
-    parser.add_argument("input_file", help="Input MIDI file")
-    parser.add_argument("output_file", help="Output MIDI file")
+    # List presets option (check this first)
+    parser.add_argument(
+        "--list-presets",
+        action="store_true",
+        help="List available methods and presets",
+    )
+
+    # Required positional arguments (only when not listing presets)
+    parser.add_argument("input_file", nargs="?", help="Input MIDI file")
+    parser.add_argument("output_file", nargs="?", help="Output MIDI file")
 
     # Method and preset options
     parser.add_argument(
@@ -175,13 +187,6 @@ def main():
 
     parser.add_argument(
         "--preset", help="Humanization intensity preset (minimal, medium, aggressive)"
-    )
-
-    # List presets option
-    parser.add_argument(
-        "--list-presets",
-        action="store_true",
-        help="List available methods and presets",
     )
 
     # Manual parameter overrides
@@ -213,6 +218,12 @@ def main():
             for preset_name, preset_data in method_data["presets"].items():
                 print(f"  {preset_name}: {preset_data['description']}")
         return
+
+    # Check required arguments for processing
+    if not args.input_file or not args.output_file:
+        parser.error(
+            "input_file and output_file are required when not using --list-presets"
+        )
 
     # Check if input file exists
     if not os.path.exists(args.input_file):
